@@ -3,5 +3,5 @@
 
 def temp_NOTC(weather_df, pv_params):
     tnotc = pv_params["T_NOCT"]
-    Tc = weather_df["Ta_C"] + weather_df["Gi_w.m2"] / 800 * (tnotc - 20)
+    Tc = weather_df["Ta_C"] + weather_df["Ee_w.m2"] / 800 * (tnotc - 20)
     return Tc

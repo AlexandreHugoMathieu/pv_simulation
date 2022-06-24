@@ -20,6 +20,6 @@ if __name__ == "__main__":
     # Get weather    # Assume effective irradiance = in-plane irradiance
     weather_df = get_weather().iloc[:96 * 365]
 
-     # Electrical Model with failure scenarios
+    # Electrical Model with failure scenarios
     filename = (Path(os.getcwd()) / "data" / f"simu_{pd.Timestamp('now').strftime('%Y%m%d_%Hh%M')}.pkl")
     data_UI = simulation_ui(weather_df, pv_params, pkl=True, filename=filename)

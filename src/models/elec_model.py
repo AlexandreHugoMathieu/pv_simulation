@@ -33,7 +33,7 @@ def get_vi(weather_df, pv_params, method="singlediode", soiling=False):
                                                           store_pkl=True)
 
         for idx, row in tqdm(weather_df.iterrows(), total=weather_df.shape[0]):
-            if row["Gi_w.m2"] != 0:
+            if row["Ee_w.m2"] != 0:
                 # Get vi_curve at the system level
                 if method == "singlediode":
                     vi_curve = vi_curve_singlediode(alpha_sc, a_ref, I_L_ref, I_o_ref, R_sh_ref, R_s,

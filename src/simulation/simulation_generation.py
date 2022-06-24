@@ -31,9 +31,13 @@ def simulation_ui(weather_df: pd.DataFrame,
 
     :return: dataframe with u, i and p.
     """
-    # Temp and elec simulation
-    weather_df.loc[:, "Tc_C"] = temp_model(weather_df, pv_params)
-    data_UI = elec_model(weather_df, pv_params, **params_elec)
+    if os.path.exists(filename):
+        data_UI= pd.read_pickle(filename)
+
+    else:
+        # Temp and elec simulation
+        weather_df.loc[:, "Tc_C"] = temp_model(weather_df, pv_params)
+        data_UI = elec_model(weather_df, pv_params, **params_elec)
 
     if pkl:
         data_UI.to_pickle(filename)
