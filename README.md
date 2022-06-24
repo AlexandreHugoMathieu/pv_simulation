@@ -1,6 +1,6 @@
 # Project
 
-Model and simulate operating pv performance including failure
+Model and simulate operating pv performance including failures
 
 ## General Information
 
