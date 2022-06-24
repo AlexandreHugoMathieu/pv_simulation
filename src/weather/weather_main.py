@@ -8,7 +8,7 @@ from src.config import ROOT
 from tqdm import tqdm
 
 
-def get_weather(site: str = "chambery"):
+def get_weather():
     weather_df = pd.read_csv(ROOT / "data" / "weather_chambery.csv", skiprows=35, sep=";")
 
     # Date treatment
@@ -53,6 +53,7 @@ def get_weather(site: str = "chambery"):
     weather_20y[["pm_2_5_g.m3", "pm_10_g.m3"]] = pm_data
     # Different Granularity (1h and 15mins)
     weather_20y[["pm_2_5_g.m3", "pm_10_g.m3"]] = weather_20y[["pm_2_5_g.m3", "pm_10_g.m3"]].ffill(limit=3).bfill(limit=3)
+    weather_20y.loc[:, "Ee_w.m2"] = weather_20y.loc[:, "Gi_w.m2"]
 
     return weather_20y
 

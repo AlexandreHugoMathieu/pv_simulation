@@ -16,7 +16,7 @@ from src.config import ROOT
 from src.failures.soiling import hsu_soiling
 
 
-def get_vi(weather_df, pv_params, method="singlediode", soiling=True):
+def get_vi(weather_df, pv_params, method="singlediode", soiling=False):
     data = pd.DataFrame(index=weather_df.index, columns=["Pmpp_w", "Impp_a", "Vmpp_v"])
 
     if soiling:
