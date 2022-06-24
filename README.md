@@ -5,7 +5,7 @@ Model and simulate operating pv performance including failures
 ## General Information
 
 This project:
-- Calculate et simulates U,I as function of weather, configuration
+- Calculates et simulates U,I as function of weather, configuration
 - Models failures
 
 ## Setup
