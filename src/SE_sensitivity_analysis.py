@@ -1,12 +1,137 @@
 # Created by A. MATHIEU at 23/06/2022
 # This script evaluates the error per agregation
+import matplotlib.pyplot as plt
 import pandas as pd
+import numpy as np
 import pvlib
+import scipy.stats
+
+from typing import Union
 
 from src.config import ROOT
-
-from src.weather.weather_main import get_weather
+from src.weather.weather_main import get_insitu_weather, get_sat_weather
 from src.simulation.simulation_generation import simulation_ui
+from src.utils.helio_fmt import setup_helio_plt
+
+
+def SE_aggregation(start: pd.Timestamp,
+                   end: pd.Timestamp,
+                   variable_measured: pd.DataFrame,
+                   freqs: list = ["5min", "15min", "1h"]):
+    """Aggregate the timeseries according to SolarEdge method"""
+
+    series = {}
+    for freq in freqs:
+        ts_tmp = variable_measured.copy()
+        index_freq = pd.DatetimeIndex(pd.date_range(start, end, freq=freq))
+        idx = pd.DatetimeIndex(sorted(ts_tmp.index.append(index_freq)))
+        idx = idx[~idx.duplicated()]
+        ts_tmp = ts_tmp.reindex(idx).ffill()
+        series[freq] = ts_tmp.resample(freq).mean()
+
+    return series
+
+
+def weighted_aggregation(start: pd.Timestamp,
+                         end: pd.Timestamp,
+                         freq_var: pd.Timedelta,
+                         variable_measured: pd.DataFrame,
+                         freqs: list = ["1min", "5min", "15min", "1h"]):
+    """Aggregate the timeseries according to the weighted-average method"""
+    index_base = pd.DatetimeIndex(pd.date_range(start, end, freq=freq_var))
+    series = {}
+    for freq in freqs:
+        series[freq] = variable_measured.reindex(index_base).ffill().resample(freq).mean()
+
+    return series
+
+
+def apply_invervals(variable: pd.Series,
+                    freq_var: pd.Timedelta,
+                    measure_intervals: pd.Series):
+    """
+    Apply intervals on simulated measures to reflect the fact that measures are taken at random times
+
+    :param variable: variable to be aggregated (power for instance)
+    :param freq_var: frequency of the simulated variable
+    :param measure_intervals: intervals between measures (in mins)
+
+    :return: simulated variable timestamped at random intervals
+    """
+    measure_intervals = (measure_intervals * pd.Timedelta("1min") / freq_var).astype(int)
+    measure_intervals = measure_intervals[measure_intervals.cumsum() < len(data_UI)]
+    measure_intervals = measure_intervals[measure_intervals.cumsum() < len(variable)]
+    variable_measured = variable.copy().iloc[measure_intervals.cumsum()]
+    variable_measured = variable_measured[~variable_measured.index.duplicated()].copy()
+
+    return variable_measured
+
+
+def visualize_SE_aggreg(variable: pd.Series,
+                        freq_var: pd.Timedelta,
+                        measure_intervals: pd.Series,
+                        freq: Union[str, pd.Timedelta]):
+    variable_measured = apply_invervals(variable, freq_var, measure_intervals)
+    start = variable_measured.index.min()
+    end = variable_measured.index.max()
+
+    # Aggregation
+    SE_serie = SE_aggregation(start, end, variable_measured, [freq])[freq]
+
+    # Figures
+    setup_helio_plt()
+    fig_freq = plt.figure(figsize=(12, 6))
+    plt.title(f"Aggregation at frequency: {freq}")
+    variable_measured.plot(linewidth=0, marker="o", label="Measured points")
+    variable.plot(label="Simulated variable")
+    SE_serie.reindex(variable.index).ffill().plot(label=f"SE-aggregation at frequency: {freq}")
+    plt.legend()
+
+    fig_raw = plt.figure(figsize=(12, 6))
+    plt.title(f"Raw data")
+    variable_measured.plot(linewidth=0, marker="o", label="Measured points")
+    variable.plot(label="Simulated variable")
+    SE_serie.reindex(variable.index).ffill().plot(label=f"SE-aggregation at frequency: {freq}")
+    plt.legend()
+
+    return fig_freq, fig_raw
+
+
+def aggregation_error(variable: pd.Series,
+                      freq_var: pd.Timedelta,
+                      measure_intervals: pd.Series,
+                      freqs: list = ["5min", "15min", "30min", "45min", "1h"]) -> pd.DataFrame:
+    """
+    Calculate aggregation error from SE method and weighted average method based on simulation method.
+
+    :param variable: variable to be aggregated (power for instance)
+    :param freq_var: frequency of the simulated variable
+    :param measure_intervals: intervals between measures (in mins)
+    :param freqs: freq to assess
+
+    :return: DataFrame with MAE metrics
+    """
+
+    # Apply the interval distribution to the theoretical calculated power
+    variable_measured = apply_invervals(variable, freq_var, measure_intervals)
+
+    # Aggregation
+    SE_series = SE_aggregation(start, end, variable_measured, freqs)
+    weighted_series = weighted_aggregation(start, end, freq_var, variable_measured, ["1min"] + freqs)
+
+    # Error calculation
+    df = pd.DataFrame(columns=["SE_agg_error", "weighted_agg_error"])
+    for freq in freqs:
+        real_agg = variable.fillna(0).resample(freq).mean()
+        error_SE = (SE_series[freq] - real_agg).fillna(0)
+        error_w = (weighted_series[freq] - real_agg).fillna(0)
+
+        # MEAN
+        df.loc[freq, "SE_agg_error"] = error_SE.abs().mean() / variable.mean() * 100
+        df.loc[freq, "weighted_agg_error"] = error_w.abs().mean() / variable.mean() * 100
+
+    return df
+
 
 if __name__ == "__main__":
     # Configuration  parameters
@@ -18,72 +143,30 @@ if __name__ == "__main__":
     pv_params["cleaning_threshold"] = 5
 
     # Get weather    # Assume effective irradiance = in-plane irradiance
-    weather_df = get_weather().iloc[:96 * 365]
-    weather_df = weather_df[["Ee_w.m2", "Ta_C"]].resample("10s").interpolate()
+    weather_df = get_insitu_weather()
 
     # Electrical Model with failure scenarios
-    filename = ROOT / "data" / f"simu_{pd.Timestamp('now').strftime('%Y%m%d_%Hh%M')}.pkl"
+    filename = ROOT / "data" / f"simu_SE_analysis.pkl"
     data_UI = simulation_ui(weather_df, pv_params, pkl=True, filename=filename)
 
-    daily_clearness = weather_df['Gh_w.m2'].resample("D").sum().iloc[:,0] / weather_df['Ghc_w.m2'].astype(float).resample("D").sum()
-    low_clearness = daily_clearness[daily_clearness < 0.50]
-    data_UI = data_UI[np.isin(data_UI.index.date,low_clearness.index.date)]
-
+    # Get aggregation errors
+    variable = data_UI["Pmpp_w"].fillna(0)
+    start = data_UI.index.min()
+    end = data_UI.index.max()
+    freq_var = pd.Timedelta(variable.index.freq)
+    freqs = ["5min", "15min", "1h"]
     dist = getattr(scipy.stats, "dweibull")
-    df = dist.rvs(size=len(data_UI), loc=5.02,
-                  scale=2.45, c=1.22)  # min
-    df = (pd.Series(df) * 6).astype(int)  # 10s
-    df = df[df.cumsum() < len(data_UI)]
+    measure_intervals = pd.Series(dist.rvs(size=len(data_UI), loc=5.02, scale=2.45, c=1.22))  # min
+    errors = aggregation_error(variable, freq_var, measure_intervals)
+    print("Average")
+    print(errors)
 
-    index_base = data_UI.index[0]
+    # Get aggregation when clearness is low
+    weather_sat = get_sat_weather()
+    daily_clearness = weather_sat['Gh_w.m2'].resample("D").sum() / weather_sat['Ghc_w.m2'].resample("D").sum()
+    low_clearness = daily_clearness.loc[daily_clearness < 0.50]
+    variable.loc[~np.isin(data_UI.index.date, low_clearness.index.date)] = 0
+    errors_clearness = aggregation_error(variable, freq_var, measure_intervals)
 
-    data_UI_real = data_UI.copy().iloc[df.cumsum()]
-
-    real_agg_5 = data_UI["Pmpp_w"].fillna(0).resample("5min").mean()
-    real_agg_15 = data_UI["Pmpp_w"].fillna(0).resample("15min").mean()
-    real_agg_1h = data_UI["Pmpp_w"].fillna(0).resample("1h").mean()
-
-    data_UI_real_before =data_UI_real.copy()
-    data_UI_real \
-        -= data_UI_real[~data_UI_real.index.duplicated()].copy()
-
-    index_5min = pd.DatetimeIndex(sorted(data_UI_real.index.append(data_UI["Pmpp_w"].resample("5min").mean().index)))
-    index_5min = index_5min[~index_5min.duplicated()]
-    index_15min =  pd.DatetimeIndex(sorted(data_UI_real.index.append(data_UI["Pmpp_w"].resample("15min").mean().index)))
-    index_15min = index_15min[~index_15min.duplicated()]
-    index_1h =  pd.DatetimeIndex(sorted(data_UI_real.index.append(data_UI["Pmpp_w"].resample("1h").mean().index)))
-    index_1h = index_1h[~index_1h.duplicated()]
-
-    SE_agg_5 = data_UI_real["Pmpp_w"].reindex(index_5min).ffill().resample("5min").mean()
-    SE_agg_15 = data_UI_real["Pmpp_w"].reindex(index_15min).ffill().resample("15min").mean()
-    SE_agg_1h = data_UI_real["Pmpp_w"].reindex(index_1h).ffill().resample("1h").mean()
-    error_5 = (SE_agg_5 - real_agg_5).abs().sum() / data_UI["Pmpp_w"].fillna(0).sum() * 100
-    error_15 = (SE_agg_15 - real_agg_15).abs().sum() / data_UI["Pmpp_w"].fillna(0).sum() * 100
-    error_1h = (SE_agg_1h - real_agg_1h).abs().sum() / data_UI["Pmpp_w"].fillna(0).sum() * 100
-
-
-
-    data_UI_real = data_UI_real.fillna(0).reindex(data_UI.index).ffill()
-
-    SE_agg_5 = data_UI_real["Pmpp_w"].resample("5min").mean()
-    SE_agg_15 = data_UI_real["Pmpp_w"].resample("15min").mean()
-    SE_agg_1h = data_UI_real["Pmpp_w"].resample("1h").mean()
-
-
-
-
-    error_10s = (data_UI_real["Pmpp_w"].fillna(0) - data_UI["Pmpp_w"].fillna(0)).abs().sum() / data_UI["Pmpp_w"].fillna(0).sum() * 100
-    error_5 = (SE_agg_5 - real_agg_5).abs().sum() / data_UI["Pmpp_w"].fillna(0).sum() * 100
-    error_15 = (SE_agg_15 - real_agg_15).abs().sum() / data_UI["Pmpp_w"].fillna(0).sum() * 100
-    error_1h = (SE_agg_1h - real_agg_1h).abs().sum() / data_UI["Pmpp_w"].fillna(0).sum() * 100
-
-
-    print(error_5)
-    print(error_15)
-    print(error_1h)
-
-    data_UI_real_before["Pmpp_w"].plot(marker="o", label="Measured power points", color="red")
-    data_UI_real["Pmpp_w"].plot(label="Power with reading at different intervals", color="orange")
-    data_UI["Pmpp_w"].plot(label="'Real Power", color="blue")
-    import matplotlib.pyplot as plt
-    plt.legend()
+    print("Low clearness")
+    print(errors_clearness)

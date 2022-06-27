@@ -5,7 +5,7 @@ from pathlib import Path
 
 from src.config import ROOT
 
-from src.weather.weather_main import get_weather
+from src.weather.weather_main import get_sat_weather
 from src.simulation.simulation_generation import simulation_ui
 
 if __name__ == "__main__":
@@ -18,7 +18,7 @@ if __name__ == "__main__":
     pv_params["cleaning_threshold"] = 5
 
     # Get weather    # Assume effective irradiance = in-plane irradiance
-    weather_df = get_weather().iloc[:96 * 365]
+    weather_df = get_sat_weather().iloc[:96 * 365]
 
     # Electrical Model with failure scenarios
     filename = (Path(os.getcwd()) / "data" / f"simu_{pd.Timestamp('now').strftime('%Y%m%d_%Hh%M')}.pkl")

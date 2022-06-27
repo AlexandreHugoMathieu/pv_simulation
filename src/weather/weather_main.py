@@ -8,7 +8,7 @@ from src.config import ROOT
 from tqdm import tqdm
 
 
-def get_weather():
+def get_sat_weather():
     weather_df = pd.read_csv(ROOT / "data" / "weather_chambery.csv", skiprows=35, sep=";")
 
     # Date treatment
@@ -34,7 +34,7 @@ def get_weather():
                  'Wind speed': "wind_speed_m.s",
                  'Rainfall': "rain_mm"})
     weather_df = weather_df[
-        ['Gib_w.m2', 'Gid_w.m2', 'Gi_w.m2', 'Ghb_w.m2', 'Ghd_w.m2', 'Gh_w.m2', 'Gh_w.m2',"Ghc_w.m2", 'Ta_C', 'RH_perc',
+        ['Gib_w.m2', 'Gid_w.m2', 'Gi_w.m2', 'Ghb_w.m2', 'Ghd_w.m2', 'Gh_w.m2', "Ghc_w.m2", 'Ta_C', 'RH_perc',
          'wind_speed_m.s', 'rain_mm']]
 
     # Identify nans
@@ -52,14 +52,15 @@ def get_weather():
                           site="Grenoble Les Frenes", store_pkl=True)
     weather_20y[["pm_2_5_g.m3", "pm_10_g.m3"]] = pm_data
     # Different Granularity (1h and 15mins)
-    weather_20y[["pm_2_5_g.m3", "pm_10_g.m3"]] = weather_20y[["pm_2_5_g.m3", "pm_10_g.m3"]].ffill(limit=3).bfill(limit=3)
+    weather_20y[["pm_2_5_g.m3", "pm_10_g.m3"]] = weather_20y[["pm_2_5_g.m3", "pm_10_g.m3"]].ffill(limit=3).bfill(
+        limit=3)
     weather_20y.loc[:, "Ee_w.m2"] = weather_20y.loc[:, "Gi_w.m2"]
 
     return weather_20y
 
 
 def get_pm_data(date_range=pd.date_range("20210101", "20220101", freq="H", tz="CET", inclusive="left"),
-                site: str = "Grenoble Les Frenes", store_pkl: bool=True):
+                site: str = "Grenoble Les Frenes", store_pkl: bool = True):
     date_range_str = date_range.min().strftime("%Y_%m_%d_%H%M") + "_" + \
                      date_range.max().strftime("%Y_%m_%d_%H%M") + "_" + \
                      date_range.freqstr
@@ -123,5 +124,29 @@ def pm_data_extrapolation_20y():
 
     return None
 
-def get_insitu_weather():
-    weather_df = pd.read_excel(ROOT / "data" / "perf_bipv_meteo_7.xlsx")
+
+def get_insitu_weather(folder=(ROOT / "data")):
+    pkl_file = folder / "insitu_weather.pkl"
+    if os.path.exists(pkl_file):
+        weather_df = pd.read_pickle(pkl_file)
+    else:
+        weather_df = pd.read_excel(ROOT / "data" / "perf_bipv_meteo_7.xlsx")
+        weather_df["datetime"] = \
+            pd.to_datetime({"year": weather_df["'Annee'"],
+                            "month": weather_df["'Mois'"],
+                            "day": weather_df["'Jour'"],
+                            "hour": weather_df["'Heures'"],
+                            "minute": weather_df["'Minutes'"]})
+        weather_df["datetime"] = weather_df["datetime"].dt.tz_localize("CET")
+        weather_df["Ee_w.m2"] = weather_df["Gi7 [W/m2]'"].clip(lower=0)
+        weather_df["Ta_C"] = weather_df["'Ta  [C]'"]
+        weather_df = weather_df[["datetime", "Ee_w.m2", "Ta_C"]].set_index("datetime")
+        weather_df = weather_df.reindex(pd.date_range("2011-03-01", "2011-11-01", freq="1min", tz="CET"))
+        weather_df.loc[weather_df["Ta_C"] > 100, "Ta_C"] = 25
+        weather_df = weather_df.fillna(0)
+        # weather_df.loc[weather_df["Ta_C"].isnull(), "Ta_C"] = weather_df.shift(7 * 60 * 24)["Ta_C"]
+        # weather_df.loc[weather_df["Ee_w.m2"].isnull(), "Ee_w.m2"] = weather_df.shift(7 * 60 * 24)["Ee_w.m2"]
+        # weather_df.isnull().sum()
+        # weather_df.plot()
+        weather_df.to_pickle(pkl_file)
+    return weather_df
