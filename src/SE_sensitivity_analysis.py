@@ -137,8 +137,8 @@ if __name__ == "__main__":
     # Configuration  parameters
     pv_params = pvlib.pvsystem.retrieve_sam('cecmod')['Canadian_Solar_Inc__CS5P_220M']
     pv_params["tilt"] = 40
-    pv_params["strings"] = 2
-    pv_params["modules_serie"] = 12
+    pv_params["strings"] = 1
+    pv_params["modules_serie"] = 1
     pv_params["depo_veloc"] = {'2_5': 0.02, '10': 0.04}
     pv_params["cleaning_threshold"] = 5
 
